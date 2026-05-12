@@ -1,0 +1,6 @@
+fastapi
+mangum
+supabase
+bcrypt
+pydantic
+python-multipart

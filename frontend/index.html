@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fruit War</title>
+    <link rel="stylesheet" href="css/style.css">
+    <!-- Three.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- MediaPipe Hands -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;700;900&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div id="game-container">
+        <!-- 3D Canvas will be injected here by Three.js -->
+        <canvas id="blade-canvas"></canvas>
+    </div>
+
+    <!-- Hidden Video for Camera Tracking -->
+    <video class="input_video" style="display: none;"></video>
+
+    <!-- UI Layer -->
+    <div id="ui-layer">
+        
+        <!-- Login Screen -->
+        <div id="login-screen" class="screen active">
+            <div class="glass-panel">
+                <h1>FRUIT WAR</h1>
+                <p>Welcome, Ninja!</p>
+                <div class="input-group">
+                    <input type="text" id="username" placeholder="Username">
+                    <input type="password" id="password" placeholder="Password">
+                </div>
+                <div class="button-group">
+                    <button id="login-btn" class="primary-btn">Login</button>
+                    <button id="register-btn" class="secondary-btn">Register</button>
+                </div>
+                <div id="auth-message"></div>
+            </div>
+        </div>
+
+        <!-- Main Menu -->
+        <div id="main-menu" class="screen">
+            <div class="stats-bar glass-panel">
+                <div class="stat"><span class="icon">⭐</span> <span id="star-count">0</span></div>
+                <div class="stat"><span class="icon">🪙</span> <span id="coin-count">0</span></div>
+                <button id="logout-btn" class="small-btn">Logout</button>
+                <button id="reset-progress-btn" class="small-btn danger">Reset Progress</button>
+            </div>
+            
+            <div class="menu-content">
+                <h1 class="title-anim">FRUIT WAR</h1>
+                
+                <div class="modes-grid">
+                    <div class="mode-card" data-mode="classic">
+                        <h2>🗡️ Classic</h2>
+                        <div class="mode-level">Level <span id="classic-level">1</span></div>
+                        <p>3 Misses and you're out!</p>
+                        <p class="level-goal" id="classic-goal">Next: Score 50</p>
+                        <button class="play-btn">Play</button>
+                    </div>
+                    <div class="mode-card" data-mode="zen">
+                        <h2>🧘 Zen</h2>
+                        <div class="mode-level">Level <span id="zen-level">1</span></div>
+                        <p>90 seconds, no bombs.</p>
+                        <p class="level-goal" id="zen-goal">Next: Score 50</p>
+                        <button class="play-btn">Play</button>
+                    </div>
+                    <div class="mode-card" data-mode="arcade">
+                        <h2>🎮 Arcade</h2>
+                        <div class="mode-level">Level <span id="arcade-level">1</span></div>
+                        <p>60 seconds of madness!</p>
+                        <p class="level-goal" id="arcade-goal">Next: Score 50</p>
+                        <button class="play-btn">Play</button>
+                    </div>
+                </div>
+
+                <div class="themes-section glass-panel">
+                    <h3>🎨 Themes</h3>
+                    <div class="theme-options">
+                        <button class="theme-btn active" data-theme="default">🏯 Dojo</button>
+                        <button class="theme-btn locked" data-theme="neon">💜 Neon <span class="cost">🪙100</span></button>
+                        <button class="theme-btn locked" data-theme="sunset">🌅 Sunset <span class="cost">🪙150</span></button>
+                        <button class="theme-btn locked" data-theme="ocean">🌊 Ocean <span class="cost">🪙200</span></button>
+                        <button class="theme-btn locked" data-theme="sakura">🌸 Sakura <span class="cost">🪙250</span></button>
+                        <button class="theme-btn locked" data-theme="cyberpunk">⚡ Cyberpunk <span class="cost">🪙300</span></button>
+                        <button class="theme-btn locked" data-theme="lava">🔥 Lava <span class="cost">🪙350</span></button>
+                        <button class="theme-btn locked" data-theme="galaxy">🌌 Galaxy <span class="cost">🪙400</span></button>
+                        <button class="theme-btn locked" data-theme="toxic">🧪 Toxic <span class="cost">🪙450</span></button>
+                        <button class="theme-btn locked" data-theme="ice">❄️ Ice <span class="cost">🪙500</span></button>
+                        <button class="theme-btn locked" data-theme="inferno">🌋 Inferno <span class="cost">⭐1</span></button>
+                        <button class="theme-btn locked" data-theme="jungle">🌴 Jungle <span class="cost">⭐1</span></button>
+                        <button class="theme-btn locked" data-theme="storm">⛈️ Storm <span class="cost">⭐1</span></button>
+                        <button class="theme-btn locked" data-theme="gold">💰 Gold <span class="cost">⭐1</span></button>
+                        <button class="theme-btn locked" data-theme="midnight">🌑 Midnight <span class="cost">⭐1</span></button>
+                        <button class="theme-btn locked" data-theme="candy">🍬 Candy <span class="cost">⭐1</span></button>
+                        <button class="theme-btn locked" data-theme="deepsea">🐙 DeepSea <span class="cost">⭐1</span></button>
+                        <button class="theme-btn locked" data-theme="desert">🏜️ Desert <span class="cost">⭐2</span></button>
+                        <button class="theme-btn locked" data-theme="matrix">📠 Matrix <span class="cost">⭐2</span></button>
+                        <button class="theme-btn locked" data-theme="zen">🧘 Zen <span class="cost">⭐2</span></button>
+                        <button class="theme-btn locked" data-theme="steampunk">⚙️ Steampunk <span class="cost">⭐2</span></button>
+                        <button class="theme-btn locked" data-theme="rainbow">🌈 Rainbow <span class="cost">⭐2</span></button>
+                        <button class="theme-btn locked" data-theme="void">🕳️ Void <span class="cost">⭐2</span></button>
+                        <button class="theme-btn locked" data-theme="emerald">💎 Emerald <span class="cost">⭐2</span></button>
+                        <button class="theme-btn locked" data-theme="solar">☀️ Solar <span class="cost">⭐2</span></button>
+                    </div>
+                </div>
+                
+                <div class="camera-toggle">
+                    <label>
+                        <input type="checkbox" id="camera-enabled" checked>
+                        Enable Camera Hand Tracking (Virtual Blade)
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <!-- In Game UI -->
+        <div id="in-game-ui" class="screen">
+            <div class="hud">
+                <div class="score">Score: <span id="current-score">0</span></div>
+                <div class="level-hud" id="level-hud">Level 1</div>
+                <div class="lives" id="lives-display">❤️❤️❤️</div>
+                <div class="timer" id="timer-display" style="display: none;">01:30</div>
+            </div>
+            <button id="pause-btn" class="glass-btn" style="position:absolute; top:20px; right:20px;">Pause</button>
+            
+            <!-- Pause Overlay -->
+            <div id="pause-overlay" style="display:none;">
+                <div class="glass-panel">
+                    <h2>⏸️ Paused</h2>
+                    <div class="pause-buttons">
+                        <button id="resume-btn" class="primary-btn">Resume</button>
+                        <button id="pause-home-btn" class="secondary-btn">🏠 Home</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Countdown Overlay -->
+            <div id="countdown-overlay" style="display:none;">
+                <div id="countdown-number">3</div>
+            </div>
+        </div>
+
+        <!-- Game Over Screen -->
+        <div id="game-over-screen" class="screen">
+            <div class="glass-panel">
+                <h2>Game Over!</h2>
+                <div class="results">
+                    <p>Score: <span id="final-score">0</span></p>
+                    <p>Coins Earned: <span id="earned-coins">0</span></p>
+                    <p>Stars Earned: <span id="earned-stars">0</span></p>
+                </div>
+                <button id="home-btn" class="primary-btn">Main Menu</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/app.js"></script>
+    <script src="js/camera.js"></script>
+    <script src="js/game.js"></script>
+</body>
+</html>
