@@ -23,7 +23,7 @@ document.getElementById('login-btn').addEventListener('click', async () => {
     try {
         const res = await fetch(`${API_URL}/login`, {
             method: 'POST',
-            headers: {'Content-Type': 'application/json'},
+            headers: {'Content-Type': 'application/json', 'Bypass-Tunnel-Reminder': 'true'},
             body: JSON.stringify({username: user, password: pass})
         });
         const data = await res.json();
@@ -50,7 +50,7 @@ document.getElementById('register-btn').addEventListener('click', async () => {
     try {
         const res = await fetch(`${API_URL}/register`, {
             method: 'POST',
-            headers: {'Content-Type': 'application/json'},
+            headers: {'Content-Type': 'application/json', 'Bypass-Tunnel-Reminder': 'true'},
             body: JSON.stringify({username: user, password: pass})
         });
         const data = await res.json();
@@ -80,7 +80,7 @@ document.getElementById('reset-progress-btn').addEventListener('click', async ()
         try {
             const response = await fetch(`${API_URL}/reset_progress`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', 'Bypass-Tunnel-Reminder': 'true' },
                 body: JSON.stringify({ username: currentUser.username })
             });
             
@@ -305,7 +305,7 @@ document.querySelectorAll('.theme-btn').forEach(btn => {
         try {
             const res = await fetch(`${API_URL}/unlock_theme`, {
                 method: 'POST',
-                headers: {'Content-Type': 'application/json'},
+                headers: {'Content-Type': 'application/json', 'Bypass-Tunnel-Reminder': 'true'},
                 body: JSON.stringify({ 
                     username: currentUser.username, 
                     theme_name: theme,
@@ -344,7 +344,7 @@ async function endGame(score, mode) {
         try {
             const res = await fetch(`${API_URL}/update_progress`, {
                 method: 'POST',
-                headers: {'Content-Type': 'application/json'},
+                headers: {'Content-Type': 'application/json', 'Bypass-Tunnel-Reminder': 'true'},
                 body: JSON.stringify({
                     username: currentUser.username,
                     coins_gained: coinsEarned,
@@ -362,7 +362,7 @@ async function endGame(score, mode) {
         try {
             const lvlRes = await fetch(`${API_URL}/level_up`, {
                 method: 'POST',
-                headers: {'Content-Type': 'application/json'},
+                headers: {'Content-Type': 'application/json', 'Bypass-Tunnel-Reminder': 'true'},
                 body: JSON.stringify({
                     username: currentUser.username,
                     mode: mode,

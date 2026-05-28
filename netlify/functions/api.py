@@ -1,4 +1,5 @@
 import os
+import sqlite3
 from fastapi import FastAPI, HTTPException, Depends
 from mangum import Mangum
 from supabase import create_client, Client
@@ -13,10 +14,14 @@ URL = os.environ.get("SUPABASE_URL")
 KEY = os.environ.get("SUPABASE_KEY")
 
 if not URL or not KEY:
-    # Fallback for local testing or initial setup
     supabase = None
 else:
     supabase = create_client(URL, KEY)
+
+def get_db():
+    conn = sqlite3.connect("fruitwar.db")
+    conn.row_factory = sqlite3.Row
+    return conn
 
 class UserCreate(BaseModel):
     username: str
@@ -79,15 +84,7 @@ THEME_COSTS = {
 
 @app.post("/register")
 async def register(user: UserCreate):
-    if not supabase: return {"message": "Supabase not configured"}
-    
-    # Check if user exists
-    existing = supabase.table("users").select("*").eq("username", user.username).execute()
-    if existing.data:
-        raise HTTPException(status_code=400, detail="Username already registered")
-    
     hashed = bcrypt.hashpw(user.password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-    
     data = {
         "username": user.username,
         "hashed_password": hashed,
@@ -98,19 +95,36 @@ async def register(user: UserCreate):
         "arcade_level": 1,
         "unlocked_themes": "default"
     }
-    
-    supabase.table("users").insert(data).execute()
+
+    if supabase:
+        existing = supabase.table("users").select("*").eq("username", user.username).execute()
+        if existing.data:
+            raise HTTPException(status_code=400, detail="Username already registered")
+        supabase.table("users").insert(data).execute()
+    else:
+        with get_db() as db:
+            existing = db.execute("SELECT * FROM users WHERE username = ?", (user.username,)).fetchone()
+            if existing:
+                raise HTTPException(status_code=400, detail="Username already registered")
+            db.execute("""INSERT INTO users (username, hashed_password, coins, stars, classic_level, zen_level, arcade_level, unlocked_themes) 
+                          VALUES (?, ?, ?, ?, ?, ?, ?, ?)""", 
+                       (user.username, hashed, 0, 0, 1, 1, 1, "default"))
+            db.commit()
     return {"message": "User created successfully"}
 
 @app.post("/login", response_model=UserResponse)
 async def login(user: UserCreate):
-    if not supabase: raise HTTPException(status_code=500, detail="Database not configured")
-    
-    res = supabase.table("users").select("*").eq("username", user.username).execute()
-    if not res.data:
+    if supabase:
+        res = supabase.table("users").select("*").eq("username", user.username).execute()
+        db_user = res.data[0] if res.data else None
+    else:
+        with get_db() as db:
+            row = db.execute("SELECT * FROM users WHERE username = ?", (user.username,)).fetchone()
+            db_user = dict(row) if row else None
+
+    if not db_user:
         raise HTTPException(status_code=400, detail="Incorrect username or password")
     
-    db_user = res.data[0]
     if not bcrypt.checkpw(user.password.encode('utf-8'), db_user['hashed_password'].encode('utf-8')):
         raise HTTPException(status_code=400, detail="Incorrect username or password")
     
@@ -118,82 +132,105 @@ async def login(user: UserCreate):
 
 @app.post("/update_progress", response_model=UserResponse)
 async def update_progress(progress: ProgressUpdate):
-    res = supabase.table("users").select("*").eq("username", progress.username).execute()
-    if not res.data: raise HTTPException(status_code=404, detail="User not found")
-    
-    user = res.data[0]
-    new_coins = user['coins'] + progress.coins_gained
-    new_stars = user['stars'] + progress.stars_gained
-    
-    updated = supabase.table("users").update({
-        "coins": new_coins,
-        "stars": new_stars
-    }).eq("username", progress.username).execute()
-    
-    return updated.data[0]
+    if supabase:
+        res = supabase.table("users").select("*").eq("username", progress.username).execute()
+        if not res.data: raise HTTPException(status_code=404, detail="User not found")
+        user = res.data[0]
+        new_coins = user['coins'] + progress.coins_gained
+        new_stars = user['stars'] + progress.stars_gained
+        updated = supabase.table("users").update({"coins": new_coins, "stars": new_stars}).eq("username", progress.username).execute()
+        return updated.data[0]
+    else:
+        with get_db() as db:
+            row = db.execute("SELECT * FROM users WHERE username = ?", (progress.username,)).fetchone()
+            if not row: raise HTTPException(status_code=404, detail="User not found")
+            user = dict(row)
+            new_coins = user['coins'] + progress.coins_gained
+            new_stars = user['stars'] + progress.stars_gained
+            db.execute("UPDATE users SET coins = ?, stars = ? WHERE username = ?", (new_coins, new_stars, progress.username))
+            db.commit()
+            return dict(db.execute("SELECT * FROM users WHERE username = ?", (progress.username,)).fetchone())
 
 @app.post("/level_up", response_model=UserResponse)
 async def level_up(data: LevelUp):
-    res = supabase.table("users").select("*").eq("username", data.username).execute()
-    if not res.data: raise HTTPException(status_code=404, detail="User not found")
-    
-    user = res.data[0]
     level_field = f"{data.mode}_level"
-    current_level = user.get(level_field, 1)
-    threshold = current_level * 50
     
-    if data.score >= threshold:
-        updated = supabase.table("users").update({
-            level_field: current_level + 1
-        }).eq("username", data.username).execute()
-        return updated.data[0]
-    
-    return user
+    if supabase:
+        res = supabase.table("users").select("*").eq("username", data.username).execute()
+        if not res.data: raise HTTPException(status_code=404, detail="User not found")
+        user = res.data[0]
+        current_level = user.get(level_field, 1)
+        threshold = current_level * 50
+        if data.score >= threshold:
+            updated = supabase.table("users").update({level_field: current_level + 1}).eq("username", data.username).execute()
+            return updated.data[0]
+        return user
+    else:
+        with get_db() as db:
+            row = db.execute("SELECT * FROM users WHERE username = ?", (data.username,)).fetchone()
+            if not row: raise HTTPException(status_code=404, detail="User not found")
+            user = dict(row)
+            current_level = user.get(level_field, 1)
+            threshold = current_level * 50
+            if data.score >= threshold:
+                db.execute(f"UPDATE users SET {level_field} = ? WHERE username = ?", (current_level + 1, data.username))
+                db.commit()
+                return dict(db.execute("SELECT * FROM users WHERE username = ?", (data.username,)).fetchone())
+            return user
 
 @app.post("/unlock_theme", response_model=UserResponse)
 async def unlock_theme(data: UnlockTheme):
-    res = supabase.table("users").select("*").eq("username", data.username).execute()
-    if not res.data: raise HTTPException(status_code=404, detail="User not found")
-    
-    user = res.data[0]
+    if supabase:
+        res = supabase.table("users").select("*").eq("username", data.username).execute()
+        if not res.data: raise HTTPException(status_code=404, detail="User not found")
+        user = res.data[0]
+    else:
+        with get_db() as db:
+            row = db.execute("SELECT * FROM users WHERE username = ?", (data.username,)).fetchone()
+            if not row: raise HTTPException(status_code=404, detail="User not found")
+            user = dict(row)
+
     owned = user['unlocked_themes'].split(",")
     if data.theme_name in owned: return user
     
-    # Costs are validated server-side
     cost_info = THEME_COSTS.get(data.theme_name, {"type": "coins", "amount": 0})
     currency_type = cost_info["type"]
     cost_amount = cost_info["amount"]
-    
     current_balance = user.get(currency_type, 0)
     
     if current_balance < cost_amount:
-        raise HTTPException(
-            status_code=400, 
-            detail=f"Not enough {currency_type}. Need {cost_amount}, have {current_balance}"
-        )
+        raise HTTPException(status_code=400, detail=f"Not enough {currency_type}. Need {cost_amount}, have {current_balance}")
     
-    # Deduct currency and add theme
     new_balance = current_balance - cost_amount
     new_themes = user['unlocked_themes'] + "," + data.theme_name
     
-    updated = supabase.table("users").update({
-        currency_type: new_balance,
-        "unlocked_themes": new_themes
-    }).eq("username", data.username).execute()
-    
-    return updated.data[0]
+    if supabase:
+        updated = supabase.table("users").update({
+            currency_type: new_balance,
+            "unlocked_themes": new_themes
+        }).eq("username", data.username).execute()
+        return updated.data[0]
+    else:
+        with get_db() as db:
+            db.execute(f"UPDATE users SET {currency_type} = ?, unlocked_themes = ? WHERE username = ?", 
+                       (new_balance, new_themes, data.username))
+            db.commit()
+            return dict(db.execute("SELECT * FROM users WHERE username = ?", (data.username,)).fetchone())
 
 @app.post("/reset_progress", response_model=UserResponse)
 async def reset_progress(data: ResetProgress):
-    updated = supabase.table("users").update({
-        "coins": 0,
-        "stars": 0,
-        "classic_level": 1,
-        "zen_level": 1,
-        "arcade_level": 1,
-        "unlocked_themes": "default"
-    }).eq("username", data.username).execute()
-    
-    return updated.data[0]
+    if supabase:
+        updated = supabase.table("users").update({
+            "coins": 0, "stars": 0, "classic_level": 1,
+            "zen_level": 1, "arcade_level": 1, "unlocked_themes": "default"
+        }).eq("username", data.username).execute()
+        return updated.data[0]
+    else:
+        with get_db() as db:
+            db.execute("""UPDATE users SET coins=0, stars=0, classic_level=1, 
+                          zen_level=1, arcade_level=1, unlocked_themes="default" 
+                          WHERE username = ?""", (data.username,))
+            db.commit()
+            return dict(db.execute("SELECT * FROM users WHERE username = ?", (data.username,)).fetchone())
 
 handler = Mangum(app)

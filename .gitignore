@@ -1,0 +1,5 @@
+# Local Netlify folder
+.netlify
+fruitwar.db
+__pycache__/
+*.pyc
