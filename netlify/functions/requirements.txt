@@ -1,6 +1,6 @@
-﻿fastapi
+fastapi
+mangum
 supabase
 bcrypt
 pydantic
 python-multipart
-uvicorn
