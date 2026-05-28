@@ -1,15 +1,15 @@
-import os
+﻿import os
 import sqlite3
-from fastapi import FastAPI, HTTPException, Depends
-from mangum import Mangum
+from contextlib import asynccontextmanager
+from fastapi import FastAPI, HTTPException
+from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
 from supabase import create_client, Client
 from pydantic import BaseModel
 import bcrypt
-from typing import List
+import uvicorn
 
-app = FastAPI()
-
-# Supabase configuration
+# Supabase configuration (optional — falls back to SQLite if not set)
 URL = os.environ.get("SUPABASE_URL")
 KEY = os.environ.get("SUPABASE_KEY")
 
@@ -22,6 +22,42 @@ def get_db():
     conn = sqlite3.connect("fruitwar.db")
     conn.row_factory = sqlite3.Row
     return conn
+
+def init_db():
+    """Create tables if they don't exist (SQLite only)."""
+    conn = sqlite3.connect("fruitwar.db")
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            username TEXT PRIMARY KEY,
+            hashed_password TEXT NOT NULL,
+            coins INTEGER DEFAULT 0,
+            stars INTEGER DEFAULT 0,
+            classic_level INTEGER DEFAULT 1,
+            zen_level INTEGER DEFAULT 1,
+            arcade_level INTEGER DEFAULT 1,
+            unlocked_themes TEXT DEFAULT 'default'
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: initialize SQLite tables if not using Supabase
+    if not supabase:
+        init_db()
+    yield
+
+app = FastAPI(lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# --- Pydantic Models ---
 
 class UserCreate(BaseModel):
     username: str
@@ -82,7 +118,11 @@ THEME_COSTS = {
     "solar": {"type": "stars", "amount": 2},
 }
 
-@app.post("/register")
+# --- API Routes (mounted under /api) ---
+
+api = FastAPI()
+
+@api.post("/register")
 async def register(user: UserCreate):
     hashed = bcrypt.hashpw(user.password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
     data = {
@@ -112,7 +152,7 @@ async def register(user: UserCreate):
             db.commit()
     return {"message": "User created successfully"}
 
-@app.post("/login", response_model=UserResponse)
+@api.post("/login", response_model=UserResponse)
 async def login(user: UserCreate):
     if supabase:
         res = supabase.table("users").select("*").eq("username", user.username).execute()
@@ -130,7 +170,7 @@ async def login(user: UserCreate):
     
     return db_user
 
-@app.post("/update_progress", response_model=UserResponse)
+@api.post("/update_progress", response_model=UserResponse)
 async def update_progress(progress: ProgressUpdate):
     if supabase:
         res = supabase.table("users").select("*").eq("username", progress.username).execute()
@@ -151,7 +191,7 @@ async def update_progress(progress: ProgressUpdate):
             db.commit()
             return dict(db.execute("SELECT * FROM users WHERE username = ?", (progress.username,)).fetchone())
 
-@app.post("/level_up", response_model=UserResponse)
+@api.post("/level_up", response_model=UserResponse)
 async def level_up(data: LevelUp):
     level_field = f"{data.mode}_level"
     
@@ -178,7 +218,7 @@ async def level_up(data: LevelUp):
                 return dict(db.execute("SELECT * FROM users WHERE username = ?", (data.username,)).fetchone())
             return user
 
-@app.post("/unlock_theme", response_model=UserResponse)
+@api.post("/unlock_theme", response_model=UserResponse)
 async def unlock_theme(data: UnlockTheme):
     if supabase:
         res = supabase.table("users").select("*").eq("username", data.username).execute()
@@ -217,7 +257,7 @@ async def unlock_theme(data: UnlockTheme):
             db.commit()
             return dict(db.execute("SELECT * FROM users WHERE username = ?", (data.username,)).fetchone())
 
-@app.post("/reset_progress", response_model=UserResponse)
+@api.post("/reset_progress", response_model=UserResponse)
 async def reset_progress(data: ResetProgress):
     if supabase:
         updated = supabase.table("users").update({
@@ -228,9 +268,14 @@ async def reset_progress(data: ResetProgress):
     else:
         with get_db() as db:
             db.execute("""UPDATE users SET coins=0, stars=0, classic_level=1, 
-                          zen_level=1, arcade_level=1, unlocked_themes="default" 
+                          zen_level=1, arcade_level=1, unlocked_themes='default' 
                           WHERE username = ?""", (data.username,))
             db.commit()
             return dict(db.execute("SELECT * FROM users WHERE username = ?", (data.username,)).fetchone())
 
-handler = Mangum(app)
+# Mount the API sub-application and static files
+app.mount("/api", api)
+app.mount("/", StaticFiles(directory="frontend", html=True), name="frontend")
+
+if __name__ == "__main__":
+    uvicorn.run("app:app", host="0.0.0.0", port=int(os.environ.get("PORT", 8888)))
