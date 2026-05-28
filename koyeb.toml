@@ -1,0 +1,13 @@
+﻿[tool.koyeb]
+app = "fruitwar"
+service = "web"
+instance_type = "eco-small"
+regions = ["was"]
+ports = [{port = 8000, protocol = "http"}]
+routes = [{path = "/", port = 8000}]
+
+[tool.koyeb.build]
+type = "buildpack"
+
+[tool.koyeb.build.buildpack]
+run_command = "uvicorn app:app --host 0.0.0.0 --port 8000"
